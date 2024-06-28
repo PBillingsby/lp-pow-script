@@ -1,0 +1,17 @@
+{
+  "name": "lilypad-pow-rewards-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node script/script.ts"
+  },
+  "keywords": [],
+  "author": "PBillingsby",
+  "license": "ISC",
+  "dependencies": {
+    "ethers": "^6.13.1",
+    "typescript": "^5.5.2"
+  }
+}
