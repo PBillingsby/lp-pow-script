@@ -57,7 +57,7 @@ async function getAllPoWSubmissionsForDay(walletAddress) {
     const submissionCount = await contract.minerSubmissionCount(walletAddress);
 
     for (let i = 0; i < submissionCount; i++) {
-      const submission: any = await contract.powSubmissions(walletAddress, i);
+      const submission = await contract.powSubmissions(walletAddress, i);
       const formattedSubmission = {
         walletAddress: submission[0],
         nodeId: submission[1],
@@ -77,6 +77,7 @@ async function getAllPoWSubmissionsForDay(walletAddress) {
 }
 
 function sumHashRates(submissions) {
+  // Sort submissions by start timestamp in ascending order
   submissions.sort((a, b) => Number(a.start_timestap) - Number(b.start_timestap));
   let totalHashRate = 0;
   let contiguousSubmissions = [];
@@ -87,21 +88,25 @@ function sumHashRates(submissions) {
     const previousSubmission = contiguousSubmissions.length > 0 ? contiguousSubmissions[contiguousSubmissions.length - 1] : null;
     const previousEndTime = previousSubmission ? Number(previousSubmission.complete_timestap) : null;
 
+    // Check if this submission is part of a contiguous 4-hour sequence
     if (previousEndTime === null || isValid4HourSequence(previousEndTime, currentStartTime)) {
       contiguousSubmissions.push(currentSubmission);
     } else {
+      // If the previous contiguous sequence has at least 4 submissions, sum their hash rates
       if (contiguousSubmissions.length >= 4) {
         for (const submission of contiguousSubmissions) {
           totalHashRate += Number(submission.nonce);
         }
       }
+      // Start a new contiguous sequence with the current submission
       contiguousSubmissions = [currentSubmission];
     }
   }
 
+  // Process the last contiguous sequence if it has at least 4 submissions
   if (contiguousSubmissions.length >= 4) {
     for (const submission of contiguousSubmissions) {
-      totalHashRate += Number(submission?.nonce);
+      totalHashRate += Number(submission.nonce);
     }
   }
 
@@ -110,19 +115,30 @@ function sumHashRates(submissions) {
 
 async function calculateRewardsForDay(walletAddress) {
   const phaseNumber = detectCurrentPhase();
+
+  // Calculate the phase multiplier value based on the current phase
   const phaseMultiplierValue = Math.pow(phaseMultiplier, phaseNumber);
+
+  // Calculate the base points available for the current phase
   const basePointsAvailableThisPhase = pointsPerMegaHashesPerSecond * phaseMultiplierValue;
+
+  // Count the number of 4-hour windows of valid PoW submissions for the wallet address
   const fourHourWindowCount = await countOf4HourWindows(walletAddress);
 
-  // Add this when slashed rewards is figured
-  // if (fourHourWindowCount < 1) {
-  //   await slashRewards(walletAddress);
-  // } else {
-  const totalHashRate = await sumOfWalletAddressHashRatesForDay(walletAddress);
-  const rewards = basePointsAvailableThisPhase * totalHashRate! * Math.pow(clintsConstant, fourHourWindowCount - 1);
-  await saveRewardsToDatabase(walletAddress, rewards);
+  // If there are no valid 4-hour windows, apply slashing to the rewards
+  if (fourHourWindowCount < 1) {
+    await slashRewards(walletAddress);
+  } else {
+    // Sum the total hash rate for the wallet address for the day
+    const totalHashRate = await sumOfWalletAddressHashRatesForDay(walletAddress);
+
+    // Calculate the rewards based on the base points, total hash rate, and the number of 4-hour windows
+    const rewards = basePointsAvailableThisPhase * totalHashRate * Math.pow(clintsConstant, fourHourWindowCount - 1);
+
+    // Save the calculated rewards to the database
+    await saveRewardsToDatabase(walletAddress, rewards);
+  }
 }
-// }
 
 async function saveRewardsToDatabase(walletAddress, rewards) {
   console.log(`Saving rewards for ${walletAddress}: ${rewards}`);
@@ -149,7 +165,7 @@ async function countOf4HourWindows(walletAddress) {
 }
 
 function isValid4HourSequence(previousEndTime, currentStartTime) {
-  return currentStartTime - previousEndTime <= 14400;
+  return currentStartTime - previousEndTime <= 14400; // 4 hours in seconds
 }
 
 // Call the function to fetch node metrics and process each node
