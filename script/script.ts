@@ -1,18 +1,19 @@
 const { ethers } = require("ethers");
 const oldPowAbi = require("./oldPowAbi");
+const newPowAbi = require("./powAbi.json")
 
 const infuraUrl = "https://sepolia-rollup.arbitrum.io/rpc";
-const oldContractAddress = "0xacDf1005fAb67C13603C19aC5471F0c7dDBc90b2"; // POW old
+const oldContractAddress = "0x8b852ba45293d6dd51b10c57625c6c5f25adfb40"; // POW new
 const phaseMultiplier = 0.9;
 const pointsPerMegaHashesPerSecond = 10;
 const clintsConstant = 1.3195;
 const slashPcntPerDay = 0.10;
 
 const provider = new ethers.JsonRpcProvider(infuraUrl);
-const contract = new ethers.Contract(oldContractAddress, oldPowAbi, provider);
+const contract = new ethers.Contract(oldContractAddress, newPowAbi, provider);
 
 async function fetchNodeMetrics() {
-  const url = 'https://api-testnet.lilypad.tech/metrics-dashboard/nodes';
+  const url = 'https://api-testnet.lilypad.tech/metrics-dashboard/leaderboard';
 
   try {
     const response = await fetch(url);
@@ -23,7 +24,7 @@ async function fetchNodeMetrics() {
 
     // Loop through each node and process its wallet address
     for (const node of data) {
-      const walletAddress = node.ID;
+      const walletAddress = node.Wallet;
       console.log(`Processing node with wallet address: ${walletAddress} \n`);
       await calculateRewardsForDay(walletAddress);
       console.log("---------------------------------------------------------")
@@ -54,10 +55,12 @@ async function sumOfWalletAddressHashRatesForDay(walletAddress) {
 async function getAllPoWSubmissionsForDay(walletAddress) {
   try {
     const submissions = [];
-    const submissionCount = await contract.minerSubmissionCount(walletAddress);
+    const submissionCount = await contract.getMinerPowSubmissions(walletAddress);
 
-    for (let i = 0; i < submissionCount; i++) {
-      const submission: any = await contract.powSubmissions(walletAddress, i);
+    const submissionArray = submissionCount.toArray().length;
+    for (let i = 0; i < submissionArray; i++) {
+      const submission = await contract.powSubmissions(walletAddress, i);
+
       const formattedSubmission = {
         walletAddress: submission[0],
         nodeId: submission[1],
@@ -110,16 +113,32 @@ function sumHashRates(submissions) {
 
 async function calculateRewardsForDay(walletAddress) {
   const phaseNumber = detectCurrentPhase();
-  const phaseMultiplierValue = Math.pow(phaseMultiplier, phaseNumber);
-  const basePointsAvailableThisPhase = pointsPerMegaHashesPerSecond * phaseMultiplierValue;
-  const fourHourWindowCount = await countOf4HourWindows(walletAddress);
+  console.log(`Phase number: ${phaseNumber}`);
 
-  // Add this when slashed rewards is figured
-  // if (fourHourWindowCount < 1) {
-  //   await slashRewards(walletAddress);
-  // } else {
+  const phaseMultiplierValue = Math.pow(phaseMultiplier, phaseNumber);
+  console.log(`Phase multiplier value (0.9^${phaseNumber}): ${phaseMultiplierValue}`);
+
+  const basePointsAvailableThisPhase = pointsPerMegaHashesPerSecond * phaseMultiplierValue;
+  console.log(`Base points available this phase (10 * ${phaseMultiplierValue}): ${basePointsAvailableThisPhase}`);
+
+  const fourHourWindowCount = await countOf4HourWindows(walletAddress);
+  console.log(`Number of 4-hour windows for ${walletAddress}: ${fourHourWindowCount}`);
+
+  if (fourHourWindowCount < 1) {
+    const slashedRewards = await slashRewards(walletAddress);
+    console.log(`Rewards have been slashed for ${walletAddress}: ${slashedRewards}`);
+    return;
+  }
+
   const totalHashRate = await sumOfWalletAddressHashRatesForDay(walletAddress);
-  const rewards = basePointsAvailableThisPhase * totalHashRate! * Math.pow(clintsConstant, fourHourWindowCount - 1);
+  console.log(`Total hash rate for ${walletAddress}: ${totalHashRate}`);
+
+  const clintsConstantFactor = Math.pow(clintsConstant, fourHourWindowCount - 1);
+  console.log(`Clint's constant factor (1.3195^(${fourHourWindowCount} - 1)): ${clintsConstantFactor}`);
+
+  const rewards = basePointsAvailableThisPhase * totalHashRate * clintsConstantFactor;
+  console.log(`Calculated rewards for ${walletAddress}: ${rewards}`);
+
   await saveRewardsToDatabase(walletAddress, rewards);
 }
 // }
