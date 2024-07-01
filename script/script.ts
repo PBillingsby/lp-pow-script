@@ -35,7 +35,7 @@ async function fetchNodeMetrics() {
 }
 
 function detectCurrentPhase() {
-  const startDate = new Date('2024-01-01');
+  const startDate = new Date('2024-01-01'); // Change this to reflect the actual start date of the phases
   const currentDate = new Date();
   const phaseLengthDays = 14;
   const phaseNumber = Math.floor((currentDate - startDate) / (phaseLengthDays * 24 * 60 * 60 * 1000));
